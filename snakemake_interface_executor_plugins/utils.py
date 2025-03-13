@@ -22,6 +22,99 @@ from snakemake_interface_common.utils import not_iterable
 
 TargetSpec = namedtuple("TargetSpec", ["rulename", "wildcards_dict"])
 
+class ShellRunner:
+    """A class which captures a series of commands to be run. You may specify a working
+       directory and/or a custom environment as would be passed to subprocess.run.
+    """
+    def __init__(self, cwd=None, env=None):
+        self.cmds = []
+        self.set_cwd(cwd)
+        self.set_env(env)
+
+    def set_cwd(self, cwd):
+        """Set the directory where all commands will run. You may set this to None.
+        """
+        if not cwd:
+            self.cwd = None
+        else:
+            # pathlib.Path object will be converted to a string
+            self.cwd = str(cwd)
+
+    def set_env(self, env):
+        """Set the environment that will be used for commands. You may set this to None,
+           meaning that the current environent will be kept.
+        """
+        # Shallow-copy the dict while ensuring it is a dict (or dict-like)
+        if env is None:
+            self.env = None
+        else:
+            self.env = dict(env)
+
+    def append_command(self, cmd, args=None):
+        """Add the command to the end of the list of commands to run.
+           cmd must be a list or iterable of strings
+           args may be a dict of additional arguments
+        """
+        self.cmds.append(self._prep_cmd(cmd, args))
+
+    def prepend_command(self, cmd, args=None):
+        """Add the command to the beginning of the list of commands to run.
+           see append_command()
+        """
+        # Could use a deque, but let's keep it vanilla.
+        self.cmds[:0] = [self._prep_cmd(cmd, args)]
+
+    def _prep_cmd(self, cmd, args):
+        """This should be invoked via append_command() or prepend_command().
+           Returns a list of strings
+        """
+        # cmd must be a list or iterable. Any None is removed. Anything else is converted
+        # to a str
+        new_cmd = [ str(s) for s in cmd if s is not None ]
+
+        if args is None:
+            args = {}
+
+        for flag, value in args.items():
+            new_cmd.append(flag)
+            if value is False or value is None:
+                new_cmd.pop() # On second thoughts, remove this flag
+            elif value is True:
+                pass
+            elif isinstance(value, (dict, UserDict)):
+                # A list of k=v pairs
+                new_cmd.extent(f"{k}={v}" for k, v in value.items())
+            elif not_iterable(value):
+                new_cmd.append(str(value))
+            else:
+                new_cmd.extend(str(s) for s in value if s is not None)
+
+        return new_cmd
+
+    def quote_command(self):
+        """Return the whole command as a big string, ready to run in Bash
+        """
+        quoted_cmd = ""
+        if self.cwd is not None:
+            quoted_cmd += f"cd {shlex.quote(self.cwd)} && "
+        if self.env:
+            env_items = [ shlex.quote(f"{k}={v}") for k, v in self.env.items() ]
+            quoted_cmd += f"export {' '.join(env_items)} && "
+        for acmd in self.cmds:
+            quoted_cmd += " ".join(shlex.quote(s) for s in acmd)
+            if acmd is not self.cmds[-1]:
+                quoted_cmd += " && "
+
+        return quoted_cmd
+
+    def check_call(self, **args):
+        """Runs each command with subprocess.check_call(), raising subprocess.CalledProcessError
+           if any command fails,
+        """
+        # TODO - might need to combine self.env with os.environ?
+        for acmd in self.cmds:
+            subprocess.check_call(acmd, cwd=self.cwd, env=self.env, **args)
+
 
 def format_cli_arg(flag, value, quote=True, skip=False, base64_encode: bool = False):
     if not skip and value:
