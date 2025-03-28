@@ -1,4 +1,5 @@
 from snakemake_interface_executor_plugins.utils import ShellRunner
+from textwrap import dedent as dd
 
 # Test the class that aims to robustly run shell commands, and replace these functions:
 #  format_cli_arg
@@ -27,3 +28,14 @@ def test_shell_runner_1():
                  " && append" )
 
     assert(sr.quote_command() == expected)
+
+    expected2 = dd("""\
+                      set -e
+                      cd 'dir with spaces'
+                      export 'E1=env var with spaces' 'E2=env var "with" '"'"'quotes'"'"''
+                      prepend
+                      command arg1 arg2 --foo --bam list of 'bam things'
+                      append
+                   """)
+
+    assert(sr.quote_command(oneline=False) == expected2)

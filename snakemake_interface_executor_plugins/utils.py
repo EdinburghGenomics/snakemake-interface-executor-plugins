@@ -98,19 +98,24 @@ class ShellRunner:
 
         return new_cmd
 
-    def quote_command(self):
+    def quote_command(self, oneline=True):
         """Return the whole command as a big string, ready to run in Bash
         """
-        quoted_cmd = ""
+        cmd_prefix = [] if oneline else [["set", "-e"]]
         if self.cwd is not None:
-            quoted_cmd += f"cd {shlex.quote(self.cwd)} && "
+            cmd_prefix.append(["cd", self.cwd])
         if self.env:
-            env_items = [ shlex.quote(f"{k}={v}") for k, v in self.env.items() ]
-            quoted_cmd += f"export {' '.join(env_items)} && "
-        for acmd in self.cmds:
+            env_items = [ f"{k}={v}" for k, v in self.env.items() ]
+            cmd_prefix.append(["export", *env_items])
+
+        quoted_cmd = ""
+        for acmd in cmd_prefix + self.cmds:
             quoted_cmd += " ".join(shlex.quote(s) for s in acmd)
-            if acmd is not self.cmds[-1]:
-                quoted_cmd += " && "
+            if oneline:
+                if acmd is not self.cmds[-1]:
+                    quoted_cmd += " && "
+            else:
+                quoted_cmd += "\n"
 
         return quoted_cmd
 
