@@ -4,7 +4,7 @@ __email__ = "johannes.koester@uni-due.de"
 __license__ = "MIT"
 
 from abc import abstractmethod
-from typing import Dict
+from typing import Dict, Optional
 from snakemake_interface_executor_plugins.executors.base import (
     AbstractExecutor,
     SubmittedJobInfo,
@@ -69,15 +69,17 @@ class RealExecutor(AbstractExecutor):
     def additional_general_args(self):
         """Inherit this method to add stuff to the general args.
 
-        A list must be returned.
+        A dict must be returned. It will be added to the args dict in ShellRunner.append_command()
         """
-        return []
+        return {}
 
     def get_job_args(self, job: JobExecutorInterface, **kwargs):
         """Returns a dict of args to be added to command for a given job
         """
         args = {}
         args["--target-jobs"] = list(encode_target_jobs_cli_args(job.get_target_spec()))
+
+        args.update(self.additional_general_args())
 
         # Restrict considered rules for faster DAG computation.
         # This does not work for updated jobs because they need
@@ -129,8 +131,8 @@ class RealExecutor(AbstractExecutor):
         else:
             return dict()
 
-    def get_job_exec_prefix(self, job: JobExecutorInterface) -> list:
-        return []
+    def get_job_exec_dir(self, job: JobExecutorInterface) -> Optional[str]:
+        return None
 
     def get_job_exec_suffix(self, job: JobExecutorInterface) -> list:
         return []
@@ -142,8 +144,7 @@ class RealExecutor(AbstractExecutor):
         )
 
         sr.set_env(self.get_envvar_declarations())
-        # FIXME - prefix might change the directory?
-        sr.prepend_command(self.get_job_exec_prefix(job))
+        sr.set_cwd(self.get_job_exec_dir(job))
 
         # job_args is the dict of args passed to the snakemake command
         job_args = { "--snakefile": self.get_snakefile(),
