@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional
 
 from snakemake_interface_executor_plugins.jobs import JobExecutorInterface
 from snakemake_interface_executor_plugins.logging import LoggerExecutorInterface
-from snakemake_interface_executor_plugins.utils import format_cli_arg
 from snakemake_interface_executor_plugins.workflow import WorkflowExecutorInterface
 
 
@@ -31,12 +30,6 @@ class AbstractExecutor(ABC):
         self.logger = logger
 
     def get_resource_declarations_dict(self, job: JobExecutorInterface):
-        def isdigit(i):
-            s = str(i)
-            # Adapted from https://stackoverflow.com/a/1265696
-            if s[0] in ("-", "+"):
-                return s[1:].isdigit()
-            return s.isdigit()
 
         excluded_resources = self.workflow.resource_scopes.excluded.union(
             {"_nodes", "_cores"}
@@ -44,18 +37,10 @@ class AbstractExecutor(ABC):
         return {
             resource: value
             for resource, value in job.resources.items()
-            if isinstance(value, int)
-            # need to check bool seperately because bool is a subclass of int
-            and isdigit(value)
-            and resource not in excluded_resources
-        }
 
-    def get_resource_declarations(self, job: JobExecutorInterface):
-        resources = [
-            f"{resource}={value}"
-            for resource, value in self.get_resource_declarations_dict(job).items()
-        ]
-        return format_cli_arg("--resources", resources)
+            # need to check explicitly because bool is a subclass of int
+            if type(value) is int and (resource not in excluded_resources)
+        }
 
     def run_jobs(
         self,

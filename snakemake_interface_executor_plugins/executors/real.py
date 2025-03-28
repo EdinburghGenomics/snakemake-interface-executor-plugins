@@ -11,11 +11,7 @@ from snakemake_interface_executor_plugins.executors.base import (
 )
 from snakemake_interface_executor_plugins.logging import LoggerExecutorInterface
 from snakemake_interface_executor_plugins.settings import ExecMode
-from snakemake_interface_executor_plugins.utils import (
-    encode_target_jobs_cli_args,
-    format_cli_arg,
-    join_cli_args,
-)
+from snakemake_interface_executor_plugins.utils import ShellRunner, encode_target_jobs_cli_args
 from snakemake_interface_executor_plugins.jobs import JobExecutorInterface
 from snakemake_interface_executor_plugins.workflow import WorkflowExecutorInterface
 
@@ -78,34 +74,32 @@ class RealExecutor(AbstractExecutor):
         return []
 
     def get_job_args(self, job: JobExecutorInterface, **kwargs):
+        """Returns a dict of args to be added to command for a given job
+        """
+        args = {}
+        args["--target-jobs"] = list(encode_target_jobs_cli_args(job.get_target_spec()))
+
+        # Restrict considered rules for faster DAG computation.
+        # This does not work for updated jobs because they need
+        # to be updated in the spawned process as well.
+        if not job.is_updated:
+            args["--allowed-rules"] = job.rules
+
+        # Ensure that a group uses its proper local groupid.
+        if job.is_group():
+            args["--local-groupid"] = job.jobid
+
+        args["--cores"] = kwargs.get("cores", self.cores)
+        args["--attempt"] = job.attempt
+        args["--force-use-threads"] = not job.is_group(),
+
         unneeded_temp_files = list(self.workflow.dag.get_unneeded_temp_files(job))
-        return join_cli_args(
-            [
-                format_cli_arg(
-                    "--target-jobs", encode_target_jobs_cli_args(job.get_target_spec())
-                ),
-                # Restrict considered rules for faster DAG computation.
-                # This does not work for updated jobs because they need
-                # to be updated in the spawned process as well.
-                format_cli_arg(
-                    "--allowed-rules",
-                    job.rules,
-                    quote=False,
-                    skip=job.is_updated,
-                ),
-                # Ensure that a group uses its proper local groupid.
-                format_cli_arg("--local-groupid", job.jobid, skip=not job.is_group()),
-                format_cli_arg("--cores", kwargs.get("cores", self.cores)),
-                format_cli_arg("--attempt", job.attempt),
-                format_cli_arg("--force-use-threads", not job.is_group()),
-                format_cli_arg(
-                    "--unneeded-temp-files",
-                    unneeded_temp_files,
-                    skip=not unneeded_temp_files,
-                ),
-                self.get_resource_declarations(job),
-            ]
-        )
+        if unneeded_temp_files:
+            args["--unneeded-temp-files"] = unneeded_temp_files
+
+        args["--resources"] = self.get_resource_declarations_dict(job)
+
+        return args
 
     @property
     def job_specific_local_groupid(self):
@@ -125,56 +119,49 @@ class RealExecutor(AbstractExecutor):
         return self.workflow.executor_plugin.common_settings
 
     def get_envvar_declarations(self):
-        declaration = ""
-        envars = self.envvars()
-        if self.common_settings.pass_envvar_declarations_to_cmd and envars:
-            defs = " ".join(f"{var}={value!r}" for var, value in envars.items())
-            declaration = f"export {defs} &&"
-        return declaration
+        """Return env vars as a dict.
 
-    def get_job_exec_prefix(self, job: JobExecutorInterface):
-        return ""
+           We leave it to ShellRunner to work out how to pass these to the shell.
+        """
+        envvars = self.envvars()
+        if self.common_settings.pass_envvar_declarations_to_cmd and envvars:
+            return envvars
+        else:
+            return dict()
 
-    def get_job_exec_suffix(self, job: JobExecutorInterface):
-        return ""
+    def get_job_exec_prefix(self, job: JobExecutorInterface) -> list:
+        return []
 
-    def format_job_exec(self, job: JobExecutorInterface) -> str:
-        prefix = self.get_job_exec_prefix(job)
-        if prefix:
-            prefix += " &&"
-        suffix = self.get_job_exec_suffix(job)
-        if suffix:
-            suffix = f"&& {suffix}"
-        general_args = self.workflow.spawned_job_args_factory.general_args(
+    def get_job_exec_suffix(self, job: JobExecutorInterface) -> list:
+        return []
+
+    def format_job_exec(self, job: JobExecutorInterface) -> ShellRunner:
+        # The precommand function returns a ShellRunner instance
+        sr = self.workflow.spawned_job_args_factory.precommand(
             executor_common_settings=self.common_settings
         )
-        precommand = self.workflow.spawned_job_args_factory.precommand(
-            executor_common_settings=self.common_settings
-        )
-        if precommand:
-            precommand += " &&"
 
-        args = join_cli_args(
-            [
-                prefix,
-                self.get_envvar_declarations(),
-                precommand,
-                self.get_python_executable(),
-                "-m snakemake",
-                format_cli_arg("--snakefile", self.get_snakefile()),
-                self.get_job_args(job),
-                general_args,
-                self.additional_general_args(),
-                format_cli_arg("--mode", self.get_exec_mode().item_to_choice()),
-                format_cli_arg(
-                    "--local-groupid",
-                    self.workflow.group_settings.local_groupid,
-                    skip=self.job_specific_local_groupid,
-                ),
-                suffix,
-            ]
-        )
-        return args
+        sr.set_env(self.get_envvar_declarations())
+        # FIXME - prefix might change the directory?
+        sr.prepend_command(self.get_job_exec_prefix(job))
+
+        # job_args is the dict of args passed to the snakemake command
+        job_args = { "--snakefile": self.get_snakefile(),
+                     "--mode": self.get_exec_mode().item_to_choice() }
+        job_args.update(self.get_job_args(job))
+        job_args.update( self.workflow.spawned_job_args_factory.general_args(
+                            executor_common_settings=self.common_settings
+                         ) )
+        if not self.job_specific_local_groupid:
+            job_args["--local-groupid"] = self.workflow.group_settings.local_groupid
+
+
+        sr.append_command([ self.get_python_executable(),
+                            "-m", "snakemake" ],
+                            args = job_args )
+        sr.append_command(self.get_job_exec_suffix(job))
+
+        return sr
 
     def envvars(self) -> Dict[str, str]:
         return self.workflow.spawned_job_args_factory.envvars()

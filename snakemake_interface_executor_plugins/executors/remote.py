@@ -19,7 +19,7 @@ from snakemake_interface_executor_plugins.executors.real import RealExecutor
 from snakemake_interface_executor_plugins.jobs import JobExecutorInterface
 from snakemake_interface_executor_plugins.logging import LoggerExecutorInterface
 from snakemake_interface_executor_plugins.settings import ExecMode, SharedFSUsage
-from snakemake_interface_executor_plugins.utils import async_lock, format_cli_arg
+from snakemake_interface_executor_plugins.utils import async_lock
 from snakemake_interface_executor_plugins.workflow import WorkflowExecutorInterface
 
 from throttler import Throttler
@@ -129,10 +129,13 @@ class RemoteExecutor(RealExecutor, ABC):
         )
 
     def get_job_args(self, job: JobExecutorInterface):
-        waitfiles_parameter = ""
+        """Returns the job args as a dict suitable for passing to
+           ShellRunner.append_command as the args parameter
+        """
+        job_args = dict(super().get_job_args(job))
+
         if SharedFSUsage.INPUT_OUTPUT in self.workflow.storage_settings.shared_fs_usage:
-            wait_for_files = []
-            wait_for_files.append(self.tmpdir)
+            wait_for_files = [self.tmpdir]
             wait_for_files.extend(job.get_wait_for_files())
 
             # Only create extra file if we have more than 20 input files.
@@ -142,13 +145,11 @@ class RemoteExecutor(RealExecutor, ABC):
                 with open(wait_for_files_file, "w") as fd:
                     print(*wait_for_files, sep="\n", file=fd)
 
-                waitfiles_parameter = format_cli_arg(
-                    "--wait-for-files-file", wait_for_files_file
-                )
+                job_args["--wait-for-files-file"] = wait_for_files_file
             else:
-                waitfiles_parameter = format_cli_arg("--wait-for-files", wait_for_files)
+                job_args["--wait-for-files"] = wait_for_files
 
-        return f"{super().get_job_args(job)} {waitfiles_parameter}"
+        return job_args
 
     def report_job_submission(
         self, job_info: SubmittedJobInfo, register_job: bool = True

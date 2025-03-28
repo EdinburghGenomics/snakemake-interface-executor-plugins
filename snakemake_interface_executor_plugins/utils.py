@@ -54,15 +54,22 @@ class ShellRunner:
         """Add the command to the end of the list of commands to run.
            cmd must be a list or iterable of strings
            args may be a dict of additional arguments
+           if the command is empty after processing it will not be added
         """
-        self.cmds.append(self._prep_cmd(cmd, args))
+        new_cmd = self._prep_cmd(cmd, args)
+
+        if new_cmd:
+            self.cmds.append(new_cmd)
 
     def prepend_command(self, cmd, args=None):
         """Add the command to the beginning of the list of commands to run.
            see append_command()
         """
-        # Could use a deque, but let's keep it vanilla.
-        self.cmds[:0] = [self._prep_cmd(cmd, args)]
+        new_cmd = self._prep_cmd(cmd, args)
+
+        if new_cmd:
+            # Could use a deque, but let's keep it vanilla.
+            self.cmds[:0] = [new_cmd]
 
     def _prep_cmd(self, cmd, args):
         """This should be invoked via append_command() or prepend_command().
@@ -115,7 +122,7 @@ class ShellRunner:
         for acmd in self.cmds:
             subprocess.check_call(acmd, cwd=self.cwd, env=self.env, **args)
 
-
+''' TODO - delete all this
 def format_cli_arg(flag, value, quote=True, skip=False, base64_encode: bool = False):
     if not skip and value:
         if isinstance(value, bool):
@@ -179,7 +186,7 @@ def join_cli_args(args):
         raise TypeError(
             f"bug: join_cli_args expects iterable of strings. Given: {args}"
         ) from e
-
+'''
 
 def url_can_parse(url: str) -> bool:
     """
@@ -192,29 +199,24 @@ def url_can_parse(url: str) -> bool:
 def encode_target_jobs_cli_args(
     target_jobs: List[TargetSpec],
 ) -> List[str]:
-    items = []
-
-    def add_quotes_if_contains_comma(s):
-        if isinstance(s, str):
-            if "," in s:
-                return f'"{s}"'
-        return s
-
+    """Yields a series of rule::wc1=v1 strings. The same rule may be
+       repeated to add multiple wildcards. The v1 part may contain any
+       characters including ':' and '=' and quotes.
+    """
     for spec in target_jobs:
-        wildcards = ",".join(
-            f"{key}={add_quotes_if_contains_comma(value)}"
-            for key, value in spec.wildcards_dict.items()
-        )
-        items.append(f"{spec.rulename}:{wildcards}")
-    return items
-
+        if not spec.wildcards_dict:
+            # Rule with no wildcards
+            yield f"{spec.rulename}::"
+        else:
+            for key, value in spec.wildcards_dict.items():
+                yield f"{spec.rulename}::{key}={value}"
 
 _pool = concurrent.futures.ThreadPoolExecutor()
 
 
 @contextlib.asynccontextmanager
 async def async_lock(_lock: threading.Lock):
-    """Use a threaded lock form threading.Lock in an async context
+    """Use a threaded lock from threading.Lock in an async context
 
     Necessary because asycio.Lock is not threadsafe, so only one thread can safely use
     it at a time.
@@ -227,6 +229,7 @@ async def async_lock(_lock: threading.Lock):
     finally:
         _lock.release()
 
+''' FIXME delete this
 
 _is_quoted_re = re.compile(r"^['\"].+['\"]")
 
@@ -237,6 +240,9 @@ def is_quoted(value: str) -> bool:
 
 base64_prefix = "base64//"
 
+def encode_as_base64(arg: str):
+    return f"{base64_prefix}{base64.b64encode(arg.encode()).decode()}"
+'''
 
 def maybe_base64(parser_func):
     """Parse optionally base64 encoded CLI args, applying parser_func if not None."""
@@ -267,6 +273,3 @@ def maybe_base64(parser_func):
 
     return inner
 
-
-def encode_as_base64(arg: str):
-    return f"{base64_prefix}{base64.b64encode(arg.encode()).decode()}"
