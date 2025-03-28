@@ -6,8 +6,6 @@ __license__ = "MIT"
 import asyncio
 import base64
 from collections import UserDict
-from pathlib import Path
-import re
 import shlex
 import threading
 from typing import Any, List
@@ -15,6 +13,7 @@ from urllib.parse import urlparse
 from collections import namedtuple
 import concurrent.futures
 import contextlib
+import subprocess
 
 from snakemake_interface_common.settings import SettingsEnumBase
 from snakemake_interface_common.utils import not_iterable
@@ -83,18 +82,28 @@ class ShellRunner:
             args = {}
 
         for flag, value in args.items():
-            new_cmd.append(flag)
+
+            # FIXME - do I need to deal explicitly with SettingsEnumBase?
+            assert not isinstance(value, SettingsEnumBase)
+
             if value is False or value is None:
-                new_cmd.pop() # On second thoughts, remove this flag
+                pass # Skip this one entirely
             elif value is True:
-                pass
+                new_cmd.append(flag)
             elif isinstance(value, (dict, UserDict)):
                 # A list of k=v pairs
-                new_cmd.extent(f"{k}={v}" for k, v in value.items())
+                if value.keys():
+                    new_cmd.append(flag)
+                    new_cmd.extend(f"{k}={v}" for k, v in value.items())
             elif not_iterable(value):
+                # Strings, ints, Paths, etc.
+                new_cmd.append(flag)
                 new_cmd.append(str(value))
             else:
-                new_cmd.extend(str(s) for s in value if s is not None)
+                value = [str(s) for s in value if s is not None]
+                if value:
+                    new_cmd.append(flag)
+                    new_cmd.extend(value)
 
         return new_cmd
 
@@ -234,16 +243,14 @@ async def async_lock(_lock: threading.Lock):
     finally:
         _lock.release()
 
+base64_prefix = "base64//"
+
 ''' FIXME delete this
 
 _is_quoted_re = re.compile(r"^['\"].+['\"]")
 
-
 def is_quoted(value: str) -> bool:
     return _is_quoted_re.match(value) is not None
-
-
-base64_prefix = "base64//"
 
 def encode_as_base64(arg: str):
     return f"{base64_prefix}{base64.b64encode(arg.encode()).decode()}"

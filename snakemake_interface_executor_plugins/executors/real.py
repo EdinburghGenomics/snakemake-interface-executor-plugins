@@ -93,7 +93,7 @@ class RealExecutor(AbstractExecutor):
 
         args["--cores"] = kwargs.get("cores", self.cores)
         args["--attempt"] = job.attempt
-        args["--force-use-threads"] = not job.is_group(),
+        args["--force-use-threads"] = not job.is_group()
 
         unneeded_temp_files = list(self.workflow.dag.get_unneeded_temp_files(job))
         if unneeded_temp_files:

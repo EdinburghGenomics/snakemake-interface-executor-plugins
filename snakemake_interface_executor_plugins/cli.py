@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Mapping
+from typing import Mapping, Any
 
 from snakemake_interface_executor_plugins.utils import ShellRunner
 from snakemake_interface_executor_plugins.settings import CommonSettings

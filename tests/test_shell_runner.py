@@ -16,7 +16,8 @@ def test_shell_runner_1():
     sr.append_command( ["command", "arg1", None, "arg2"],
                        args = { '--foo': True,
                                 '--bar': False,
-                                '--bam': ["list", "of", "bam things"] } )
+                                '--bam': ["list", "of", "bam things"],
+                                '--baz': dict(k1 = "v1", k2 = "v 2") } )
 
     sr.append_command( ["append"] )
     sr.prepend_command( ["prepend"] )
@@ -24,7 +25,7 @@ def test_shell_runner_1():
     expected = ( "cd 'dir with spaces'"
                  " && export 'E1=env var with spaces' 'E2=env var \"with\" '\"'\"'quotes'\"'\"''"
                  " && prepend"
-                 " && command arg1 arg2 --foo --bam list of 'bam things'"
+                 " && command arg1 arg2 --foo --bam list of 'bam things' --baz k1=v1 'k2=v 2'"
                  " && append" )
 
     assert(sr.quote_command() == expected)
@@ -34,7 +35,7 @@ def test_shell_runner_1():
                       cd 'dir with spaces'
                       export 'E1=env var with spaces' 'E2=env var "with" '"'"'quotes'"'"''
                       prepend
-                      command arg1 arg2 --foo --bam list of 'bam things'
+                      command arg1 arg2 --foo --bam list of 'bam things' --baz k1=v1 'k2=v 2'
                       append
                    """)
 
