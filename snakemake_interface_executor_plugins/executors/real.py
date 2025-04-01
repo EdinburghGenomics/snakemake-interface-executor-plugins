@@ -134,8 +134,12 @@ class RealExecutor(AbstractExecutor):
     def get_job_exec_dir(self, job: JobExecutorInterface) -> Optional[str]:
         return None
 
-    def get_job_exec_suffix(self, job: JobExecutorInterface) -> list:
-        return []
+    def set_job_exec_suffix(self, runner: ShellRunner, job: JobExecutorInterface) -> None:
+        """This function will be passed the final ShellRunner instance and may modify it as
+           needed.
+           Typically, plugins will add suffix commands to be run after the workflow.
+        """
+        return
 
     def format_job_exec(self, job: JobExecutorInterface) -> ShellRunner:
         # The precommand function returns a ShellRunner instance
@@ -160,7 +164,9 @@ class RealExecutor(AbstractExecutor):
         sr.append_command([ self.get_python_executable(),
                             "-m", "snakemake" ],
                             args = job_args )
-        sr.append_command(self.get_job_exec_suffix(job))
+
+        # The actual executor instance may now modify the job as need be
+        self.set_job_exec_suffix(sr, job)
 
         return sr
 

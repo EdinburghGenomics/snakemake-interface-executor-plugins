@@ -231,12 +231,13 @@ class RemoteExecutor(RealExecutor, ABC):
         return os.path.join(self.tmpdir, f)
 
     def write_jobscript(self, job: JobExecutorInterface, jobscript):
+        # This now returns a ShellRunner object.
         exec_job = self.format_job_exec(job)
 
         try:
             content = self.jobscript.format(
                 properties=job.properties(),
-                exec_job=exec_job,
+                exec_job=exec_job.quote_command(oneline=False),
             )
         except KeyError as e:
             if self.is_default_jobscript:

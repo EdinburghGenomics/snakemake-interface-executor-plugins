@@ -3,6 +3,7 @@ __copyright__ = "Copyright 2023, Johannes Köster"
 __email__ = "johannes.koester@uni-due.de"
 __license__ = "MIT"
 
+import os
 import asyncio
 import base64
 from collections import UserDict
@@ -24,11 +25,18 @@ TargetSpec = namedtuple("TargetSpec", ["rulename", "wildcards_dict"])
 class ShellRunner:
     """A class which captures a series of commands to be run. You may specify a working
        directory and/or a custom environment as would be passed to subprocess.run.
+
+       You may specify one or more commands to be run in the case of an error.
+
+       You may add one or more commands that run finally, regardless of errors.
     """
     def __init__(self, cwd=None, env=None):
         self.cmds = []
         self.set_cwd(cwd)
         self.set_env(env)
+
+        self.on_error_cmds = []
+        self.on_exit_cmds = []
 
     def set_cwd(self, cwd):
         """Set the directory where all commands will run. You may set this to None.
@@ -48,6 +56,22 @@ class ShellRunner:
             self.env = None
         else:
             self.env = dict(env)
+
+    def append_on_error(self, cmd, args=None):
+        """Append a command to run if there is an error.
+        """
+        new_cmd = self._prep_cmd(cmd, args)
+
+        if new_cmd:
+            self.on_error_cmds.append(new_cmd)
+
+    def append_on_exit(self, cmd, args=None):
+        """Add a commands to run at the end whatever happens.
+        """
+        new_cmd = self._prep_cmd(cmd, args)
+
+        if new_cmd:
+            self.on_ecit_cmds.append(new_cmd)
 
     def append_command(self, cmd, args=None):
         """Add the command to the end of the list of commands to run.
@@ -108,33 +132,87 @@ class ShellRunner:
         return new_cmd
 
     def quote_command(self, oneline=True):
-        """Return the whole command as a big string, ready to run in Bash
+        """Return all the commands as a big string, ready to run in Bash or Dash
         """
-        cmd_prefix = [] if oneline else [["set", "-e"]]
+        cmd_prefix = []
         if self.cwd is not None:
             cmd_prefix.append(["cd", self.cwd])
         if self.env:
             env_items = [ f"{k}={v}" for k, v in self.env.items() ]
             cmd_prefix.append(["export", *env_items])
 
-        quoted_cmd = ""
-        for acmd in cmd_prefix + self.cmds:
-            quoted_cmd += " ".join(shlex.quote(s) for s in acmd)
-            if oneline:
-                if acmd is not self.cmds[-1]:
-                    quoted_cmd += " && "
-            else:
-                quoted_cmd += "\n"
+        def qcl(cmd_list):
+            """Quote Command List - Turns a list of lists into a list of strings
+            """
+            return [ " ".join(shlex.quote(s) for s in acmd) for acmd in cmd_list ]
 
-        return quoted_cmd
+        func = self._assemble_command_oneline if oneline else self._assemble_command_multiline
+        return func(qcl(cmd_prefix + self.cmds), qcl(self.on_error_cmds), qcl(self.on_exit_cmds))
+
+
+    def _assemble_command_multiline(self, cmds, on_error, on_exit):
+        full_cmd = "( set -e\n"
+
+        for acmd in cmds:
+            # acmd is already a quoted string
+            full_cmd += acmd
+            full_cmd += "\n"
+
+        full_cmd += ") ; _retval=$?\n"
+
+        # commands to be executed in case of error
+        if on_error:
+            full_cmd += "if [ $_retval != 0 ] ; then\n"
+            for acmd in on_error:
+                full_cmd += acmd
+                full_cmd += "\n"
+            full_cmd += "fi\n"
+
+        # commands to be executed regardless
+        for acmd in on_exit:
+            full_cmd += acmd
+            full_cmd += "\n"
+        full_cmd += "[ $_retval = 0 ] || exit $_retval\n"
+
+        return full_cmd
+
+    def _assemble_command_oneline(self, cmds, on_error, on_exit):
+        # The structure for quoting out the command on a single line is different enough
+        # to warrand a separate function.
+        cmd_line = "{ "
+        cmd_line += " && ".join(cmds)
+        cmd_line += " ; } || { _retval=$? ; "
+
+        # commands to be executed in case of error
+        for acmd in on_error:
+            cmd_line += acmd + " ; "
+        cmd_line += "} ; "
+
+        for acmd in on_exit:
+            cmd_line += acmd + " ; "
+        cmd_line += '[ "${_retval:-0}" = 0 ] || exit $_retval'
+
+        return cmd_line
 
     def check_call(self, **args):
         """Runs each command with subprocess.check_call(), raising subprocess.CalledProcessError
            if any command fails,
         """
-        # TODO - might need to combine self.env with os.environ?
-        for acmd in self.cmds:
-            subprocess.check_call(acmd, cwd=self.cwd, env=self.env, **args)
+        #  combine self.env with os.environ
+        full_env = dict(os.environ)
+        full_env.update(self.env)
+
+        try:
+            for acmd in self.cmds:
+                subprocess.check_call(acmd, cwd=self.cwd, env=full_env, **args)
+        except subprocess.CalledProcessError as e:
+            # Run all the on_error commands before raising the exception
+            for acmd in self.on_error_cmds:
+                subprocess.call(acmd, cwd=self.cwd, env=full_env, **args)
+            raise e from None
+        finally:
+            for acmd in self.on_exit_cmds:
+                subprocess.call(acmd, cwd=self.cwd, env=full_env, **args)
 
 ''' TODO - delete all this
 def format_cli_arg(flag, value, quote=True, skip=False, base64_encode: bool = False):

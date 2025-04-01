@@ -22,21 +22,24 @@ def test_shell_runner_1():
     sr.append_command( ["append"] )
     sr.prepend_command( ["prepend"] )
 
-    expected = ( "cd 'dir with spaces'"
+    expected = ( "{ cd 'dir with spaces'"
                  " && export 'E1=env var with spaces' 'E2=env var \"with\" '\"'\"'quotes'\"'\"''"
                  " && prepend"
                  " && command arg1 arg2 --foo --bam list of 'bam things' --baz k1=v1 'k2=v 2'"
-                 " && append" )
+                 " && append ; } || { _retval=$? ; } ;"
+                 " [ \"${_retval:-0}\" = 0 ] || exit $_retval" )
 
     assert(sr.quote_command() == expected)
 
     expected2 = dd("""\
-                      set -e
+                      ( set -e
                       cd 'dir with spaces'
                       export 'E1=env var with spaces' 'E2=env var "with" '"'"'quotes'"'"''
                       prepend
                       command arg1 arg2 --foo --bam list of 'bam things' --baz k1=v1 'k2=v 2'
                       append
+                      ) ; _retval=$?
+                      [ $_retval = 0 ] || exit $_retval
                    """)
 
     assert(sr.quote_command(oneline=False) == expected2)
