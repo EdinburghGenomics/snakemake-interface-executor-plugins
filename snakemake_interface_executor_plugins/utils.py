@@ -6,6 +6,7 @@ __license__ = "MIT"
 import os
 import asyncio
 import base64
+import json
 from collections import UserDict
 import shlex
 import threading
@@ -214,72 +215,6 @@ class ShellRunner:
             for acmd in self.on_exit_cmds:
                 subprocess.call(acmd, cwd=self.cwd, env=full_env, **args)
 
-''' TODO - delete all this
-def format_cli_arg(flag, value, quote=True, skip=False, base64_encode: bool = False):
-    if not skip and value:
-        if isinstance(value, bool):
-            value = ""
-        else:
-            value = format_cli_pos_arg(value, quote=quote, base64_encode=base64_encode)
-        return f"{flag} {value}"
-    return ""
-
-
-def format_cli_pos_arg(value, quote=True, base64_encode: bool = False):
-    if isinstance(value, (dict, UserDict)):
-
-        def fmt_item(key, value):
-            expr = f"{key}={format_cli_value(value)}"
-            return encode_as_base64(expr) if base64_encode else repr(expr)
-
-        return join_cli_args(fmt_item(key, val) for key, val in value.items())
-    elif not_iterable(value):
-        return format_cli_value(value, quote=quote, base64_encode=base64_encode)
-    else:
-        return join_cli_args(
-            format_cli_value(v, quote=quote, base64_encode=base64_encode) for v in value
-        )
-
-
-def format_cli_value(
-    value: Any, quote: bool = False, base64_encode: bool = False
-) -> str:
-    """Format a given value for passing it to CLI.
-
-    If base64_encode is True, str values are encoded and flagged as being base64 encoded.
-    """
-
-    def maybe_encode(value):
-        return encode_as_base64(value) if base64_encode else value
-
-    if isinstance(value, SettingsEnumBase):
-        return value.item_to_choice()
-    elif isinstance(value, Path):
-        if base64_encode:
-            return encode_as_base64(str(value))
-        else:
-            return shlex.quote(str(value))
-    elif isinstance(value, str):
-        if is_quoted(value) and not base64_encode:
-            # the value is already quoted, do not quote again
-            return maybe_encode(value)
-        elif quote and not base64_encode:
-            return maybe_encode(repr(value))
-        else:
-            return maybe_encode(value)
-    else:
-        return repr(value)
-
-
-def join_cli_args(args):
-    try:
-        return " ".join(arg for arg in args if arg)
-    except TypeError as e:
-        raise TypeError(
-            f"bug: join_cli_args expects iterable of strings. Given: {args}"
-        ) from e
-'''
-
 def url_can_parse(url: str) -> bool:
     """
     returns true if urllib.parse.urlparse can parse
@@ -291,17 +226,13 @@ def url_can_parse(url: str) -> bool:
 def encode_target_jobs_cli_args(
     target_jobs: List[TargetSpec],
 ) -> List[str]:
-    """Yields a series of rule::wc1=v1 strings. The same rule may be
-       repeated to add multiple wildcards. The v1 part may contain any
-       characters including ':' and '=' and quotes.
+    """Yields a series of rule::<wc_dict_as_json> strings. The same rule may be
+       repeated with multiple wildcard combinations. The JSON-encoded strings
+       will then be quoted with shlex.quote() which looks ugly in the script but
+       is fully robust.
     """
     for spec in target_jobs:
-        if not spec.wildcards_dict:
-            # Rule with no wildcards
-            yield f"{spec.rulename}::"
-        else:
-            for key, value in spec.wildcards_dict.items():
-                yield f"{spec.rulename}::{key}={value}"
+        yield f"{spec.rulename}::{json.dumps(spec.wildcards_dict)}"
 
 _pool = concurrent.futures.ThreadPoolExecutor()
 
@@ -322,17 +253,6 @@ async def async_lock(_lock: threading.Lock):
         _lock.release()
 
 base64_prefix = "base64//"
-
-''' FIXME delete this
-
-_is_quoted_re = re.compile(r"^['\"].+['\"]")
-
-def is_quoted(value: str) -> bool:
-    return _is_quoted_re.match(value) is not None
-
-def encode_as_base64(arg: str):
-    return f"{base64_prefix}{base64.b64encode(arg.encode()).decode()}"
-'''
 
 def maybe_base64(parser_func):
     """Parse optionally base64 encoded CLI args, applying parser_func if not None."""
