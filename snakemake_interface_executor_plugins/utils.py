@@ -23,14 +23,16 @@ from snakemake_interface_common.utils import not_iterable
 
 TargetSpec = namedtuple("TargetSpec", ["rulename", "wildcards_dict"])
 
+
 class ShellRunner:
     """A class which captures a series of commands to be run. You may specify a working
-       directory and/or a custom environment as would be passed to subprocess.run.
+    directory and/or a custom environment as would be passed to subprocess.run.
 
-       You may specify one or more commands to be run in the case of an error.
+    You may specify one or more commands to be run in the case of an error.
 
-       You may add one or more commands that run finally, regardless of errors.
+    You may add one or more commands that run finally, regardless of errors.
     """
+
     def __init__(self, cwd=None, env=None):
         self.cmds = []
         self.set_cwd(cwd)
@@ -40,8 +42,7 @@ class ShellRunner:
         self.on_exit_cmds = []
 
     def set_cwd(self, cwd):
-        """Set the directory where all commands will run. You may set this to None.
-        """
+        """Set the directory where all commands will run. You may set this to None."""
         if not cwd:
             self.cwd = None
         else:
@@ -50,7 +51,7 @@ class ShellRunner:
 
     def set_env(self, env):
         """Set the environment that will be used for commands. You may set this to None,
-           meaning that the current environent will be kept.
+        meaning that the current environent will be kept.
         """
         # Shallow-copy the dict while ensuring it is a dict (or dict-like)
         if env is None:
@@ -59,16 +60,14 @@ class ShellRunner:
             self.env = dict(env)
 
     def append_on_error(self, cmd, args=None):
-        """Append a command to run if there is an error.
-        """
+        """Append a command to run if there is an error."""
         new_cmd = self._prep_cmd(cmd, args)
 
         if new_cmd:
             self.on_error_cmds.append(new_cmd)
 
     def append_on_exit(self, cmd, args=None):
-        """Add a commands to run at the end whatever happens.
-        """
+        """Add a commands to run at the end whatever happens."""
         new_cmd = self._prep_cmd(cmd, args)
 
         if new_cmd:
@@ -76,9 +75,9 @@ class ShellRunner:
 
     def append_command(self, cmd, args=None):
         """Add the command to the end of the list of commands to run.
-           cmd must be a list or iterable of strings
-           args may be a dict of additional arguments
-           if the command is empty after processing it will not be added
+        cmd must be a list or iterable of strings
+        args may be a dict of additional arguments
+        if the command is empty after processing it will not be added
         """
         new_cmd = self._prep_cmd(cmd, args)
 
@@ -87,7 +86,7 @@ class ShellRunner:
 
     def prepend_command(self, cmd, args=None):
         """Add the command to the beginning of the list of commands to run.
-           see append_command()
+        see append_command()
         """
         new_cmd = self._prep_cmd(cmd, args)
 
@@ -97,11 +96,11 @@ class ShellRunner:
 
     def _prep_cmd(self, cmd, args):
         """This should be invoked via append_command() or prepend_command().
-           Returns a list of strings
+        Returns a list of strings
         """
         # cmd must be a list or iterable. Any None is removed. Anything else is converted
         # to a str
-        new_cmd = [ str(s) for s in cmd if s is not None ]
+        new_cmd = [str(s) for s in cmd if s is not None]
 
         if args is None:
             args = {}
@@ -112,7 +111,7 @@ class ShellRunner:
             assert not isinstance(value, SettingsEnumBase)
 
             if value is False or value is None:
-                pass # Skip this one entirely
+                pass  # Skip this one entirely
             elif value is True:
                 new_cmd.append(flag)
             elif isinstance(value, (dict, UserDict)):
@@ -133,23 +132,26 @@ class ShellRunner:
         return new_cmd
 
     def quote_command(self, oneline=True):
-        """Return all the commands as a big string, ready to run in Bash or Dash
-        """
+        """Return all the commands as a big string, ready to run in Bash or Dash"""
         cmd_prefix = []
         if self.cwd is not None:
             cmd_prefix.append(["cd", self.cwd])
         if self.env:
-            env_items = [ f"{k}={v}" for k, v in self.env.items() ]
+            env_items = [f"{k}={v}" for k, v in self.env.items()]
             cmd_prefix.append(["export", *env_items])
 
         def qcl(cmd_list):
-            """Quote Command List - Turns a list of lists into a list of strings
-            """
-            return [ " ".join(shlex.quote(s) for s in acmd) for acmd in cmd_list ]
+            """Quote Command List - Turns a list of lists into a list of strings"""
+            return [" ".join(shlex.quote(s) for s in acmd) for acmd in cmd_list]
 
-        func = self._assemble_command_oneline if oneline else self._assemble_command_multiline
-        return func(qcl(cmd_prefix + self.cmds), qcl(self.on_error_cmds), qcl(self.on_exit_cmds))
-
+        func = (
+            self._assemble_command_oneline
+            if oneline
+            else self._assemble_command_multiline
+        )
+        return func(
+            qcl(cmd_prefix + self.cmds), qcl(self.on_error_cmds), qcl(self.on_exit_cmds)
+        )
 
     def _assemble_command_multiline(self, cmds, on_error, on_exit):
         full_cmd = "( set -e\n"
@@ -197,7 +199,7 @@ class ShellRunner:
 
     def check_call(self, **args):
         """Runs each command with subprocess.check_call(), raising subprocess.CalledProcessError
-           if any command fails,
+        if any command fails,
         """
         #  combine self.env with os.environ
         full_env = dict(os.environ)
@@ -215,6 +217,7 @@ class ShellRunner:
             for acmd in self.on_exit_cmds:
                 subprocess.call(acmd, cwd=self.cwd, env=full_env, **args)
 
+
 def url_can_parse(url: str) -> bool:
     """
     returns true if urllib.parse.urlparse can parse
@@ -227,12 +230,13 @@ def encode_target_jobs_cli_args(
     target_jobs: List[TargetSpec],
 ) -> List[str]:
     """Yields a series of rule::<wc_dict_as_json> strings. The same rule may be
-       repeated with multiple wildcard combinations. The JSON-encoded strings
-       will then be quoted with shlex.quote() which looks ugly in the script but
-       is fully robust.
+    repeated with multiple wildcard combinations. The JSON-encoded strings
+    will then be quoted with shlex.quote() which looks ugly in the script but
+    is fully robust.
     """
     for spec in target_jobs:
         yield f"{spec.rulename}::{json.dumps(spec.wildcards_dict)}"
+
 
 _pool = concurrent.futures.ThreadPoolExecutor()
 
@@ -252,7 +256,9 @@ async def async_lock(_lock: threading.Lock):
     finally:
         _lock.release()
 
+
 base64_prefix = "base64//"
+
 
 def maybe_base64(parser_func):
     """Parse optionally base64 encoded CLI args, applying parser_func if not None."""
@@ -282,4 +288,3 @@ def maybe_base64(parser_func):
             raise NotImplementedError()
 
     return inner
-

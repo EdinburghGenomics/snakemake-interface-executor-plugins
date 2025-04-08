@@ -130,7 +130,7 @@ class RemoteExecutor(RealExecutor, ABC):
 
     def get_job_args(self, job: JobExecutorInterface):
         """Returns the job args as a dict suitable for passing to
-           ShellRunner.append_command as the args parameter
+        ShellRunner.append_command as the args parameter
         """
         job_args = dict(super().get_job_args(job))
 

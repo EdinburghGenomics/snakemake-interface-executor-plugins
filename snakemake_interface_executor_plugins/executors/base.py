@@ -37,7 +37,6 @@ class AbstractExecutor(ABC):
         return {
             resource: value
             for resource, value in job.resources.items()
-
             # need to check explicitly because bool is a subclass of int
             if type(value) is int and (resource not in excluded_resources)
         }

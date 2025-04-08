@@ -11,7 +11,10 @@ from snakemake_interface_executor_plugins.executors.base import (
 )
 from snakemake_interface_executor_plugins.logging import LoggerExecutorInterface
 from snakemake_interface_executor_plugins.settings import ExecMode
-from snakemake_interface_executor_plugins.utils import ShellRunner, encode_target_jobs_cli_args
+from snakemake_interface_executor_plugins.utils import (
+    ShellRunner,
+    encode_target_jobs_cli_args,
+)
 from snakemake_interface_executor_plugins.jobs import JobExecutorInterface
 from snakemake_interface_executor_plugins.workflow import WorkflowExecutorInterface
 
@@ -74,8 +77,7 @@ class RealExecutor(AbstractExecutor):
         return {}
 
     def get_job_args(self, job: JobExecutorInterface, **kwargs):
-        """Returns a dict of args to be added to command for a given job
-        """
+        """Returns a dict of args to be added to command for a given job"""
         args = {}
         args["--target-jobs"] = list(encode_target_jobs_cli_args(job.get_target_spec()))
 
@@ -123,7 +125,7 @@ class RealExecutor(AbstractExecutor):
     def get_envvar_declarations(self):
         """Return env vars as a dict.
 
-           We leave it to ShellRunner to work out how to pass these to the shell.
+        We leave it to ShellRunner to work out how to pass these to the shell.
         """
         envvars = self.envvars()
         if self.common_settings.pass_envvar_declarations_to_cmd and envvars:
@@ -134,10 +136,12 @@ class RealExecutor(AbstractExecutor):
     def get_job_exec_dir(self, job: JobExecutorInterface) -> Optional[str]:
         return None
 
-    def set_job_exec_suffix(self, runner: ShellRunner, job: JobExecutorInterface) -> None:
+    def set_job_exec_suffix(
+        self, runner: ShellRunner, job: JobExecutorInterface
+    ) -> None:
         """This function will be passed the final ShellRunner instance and may modify it as
-           needed.
-           Typically, plugins will add suffix commands to be run after the workflow.
+        needed.
+        Typically, plugins will add suffix commands to be run after the workflow.
         """
         return
 
@@ -151,19 +155,22 @@ class RealExecutor(AbstractExecutor):
         sr.set_cwd(self.get_job_exec_dir(job))
 
         # job_args is the dict of args passed to the snakemake command
-        job_args = { "--snakefile": self.get_snakefile(),
-                     "--mode": self.get_exec_mode().item_to_choice() }
+        job_args = {
+            "--snakefile": self.get_snakefile(),
+            "--mode": self.get_exec_mode().item_to_choice(),
+        }
         job_args.update(self.get_job_args(job))
-        job_args.update( self.workflow.spawned_job_args_factory.general_args(
-                            executor_common_settings=self.common_settings
-                         ) )
+        job_args.update(
+            self.workflow.spawned_job_args_factory.general_args(
+                executor_common_settings=self.common_settings
+            )
+        )
         if not self.job_specific_local_groupid:
             job_args["--local-groupid"] = self.workflow.group_settings.local_groupid
 
-
-        sr.append_command([ self.get_python_executable(),
-                            "-m", "snakemake" ],
-                            args = job_args )
+        sr.append_command(
+            [self.get_python_executable(), "-m", "snakemake"], args=job_args
+        )
 
         # The actual executor instance may now modify the job as need be
         self.set_job_exec_suffix(sr, job)
