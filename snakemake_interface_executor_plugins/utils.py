@@ -5,7 +5,6 @@ __license__ = "MIT"
 
 import os
 import asyncio
-import base64
 import json
 from collections import UserDict
 import shlex
@@ -255,36 +254,3 @@ async def async_lock(_lock: threading.Lock):
         yield  # the lock is held
     finally:
         _lock.release()
-
-
-base64_prefix = "base64//"
-
-
-def maybe_base64(parser_func):
-    """Parse optionally base64 encoded CLI args, applying parser_func if not None."""
-
-    def inner(args):
-        def is_base64(arg):
-            return arg.startswith(base64_prefix)
-
-        def decode(arg):
-            if is_base64(arg):
-                return base64.b64decode(arg[len(base64_prefix) :]).decode()
-            else:
-                return arg
-
-        def apply_parser(args):
-            if parser_func is not None:
-                return parser_func(args)
-            else:
-                return args
-
-        if isinstance(args, str):
-            return apply_parser(decode(args))
-        elif isinstance(args, list):
-            decoded = [decode(arg) for arg in args]
-            return apply_parser(decoded)
-        else:
-            raise NotImplementedError()
-
-    return inner
